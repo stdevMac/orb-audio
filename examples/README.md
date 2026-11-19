@@ -8,6 +8,7 @@ python examples/02_edit_spec.py     # change one number, re-render
 python examples/03_variants.py      # N non-repeating takes from one Spec
 python examples/04_no_torch.py      # pure DSP, numpy only, no weights
 python examples/05_agent_tool.py    # an agent scores a UI animation via orb.tools
+python examples/06_tuned_bell.py    # three church bells on a D minor triad (event params)
 ```
 
 | Example | Needs torch? | Needs weights? | Shows |
@@ -17,6 +18,7 @@ python examples/05_agent_tool.py    # an agent scores a UI animation via orb.too
 | `03_variants.py` | no | no | infinite non-repeating takes |
 | `04_no_torch.py` | no | no | the shippable DSP engine |
 | `05_agent_tool.py` | no | no | the agent tool layer (`orb.tools`, as used by `orb-mcp`) |
+| `06_tuned_bell.py` | no | no | per-event `params`: a sound on a note |
 
 ## The caption grammar
 

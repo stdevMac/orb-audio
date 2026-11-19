@@ -134,6 +134,8 @@ class SpecTokenizer:
             raise ValueError(f"texture {spec.texture!r} cannot be tokenized")
         if spec.bed_db is not None:
             raise ValueError("bed_db cannot be tokenized: the planner always emits the default bed level")
+        if any(ev.params for ev in spec.events):
+            raise ValueError("event params cannot be tokenized: the planner always emits the role defaults")
         out += [SPEC, DUR] + _digits(round(spec.duration * 100), 5)
         tex = NOBED if spec.texture == NO_BED else tex_token(TEX_TO_ID[spec.texture])
         out += [TEX, tex, MOOD, MOODVAL + MOOD_TO_ID[spec.mood], EVENTS]

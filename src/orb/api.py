@@ -46,8 +46,8 @@ PLANNER_HUB_REPO = "marcosmaceo/orb-planner"
 def spec_to_dict(spec: Spec) -> dict[str, Any]:
     """A JSON-serialisable view of a Spec.
 
-    ``bed_db`` is included only when it is set, so a planner Spec (which never
-    sets it) serialises exactly as before.
+    ``bed_db`` and an event's ``params`` are included only when they are set,
+    so a planner Spec (which never sets either) serialises exactly as before.
     """
     out = {
         "duration": float(spec.duration),
@@ -61,6 +61,7 @@ def spec_to_dict(spec: Spec) -> dict[str, Any]:
                 "gain_db": float(e.gain_db),
                 "pan": float(e.pan),
                 "seed": int(e.seed),
+                **({"params": dict(e.params)} if e.params else {}),
             }
             for e in spec.events
         ],
@@ -75,7 +76,9 @@ def dict_to_spec(data: dict[str, Any]) -> Spec:
 
     Besides the planner's fields, a hand-written Spec may set ``texture`` to
     ``"none"`` (no bed: digital silence between events) and ``bed_db``, the
-    bed level relative to the foreground in [-60, -6] dB (default -40).
+    bed level relative to the foreground in [-60, -6] dB (default -40). An
+    event may carry ``params``, renderer parameters for that one event (see
+    ``orb.grammar.EVENT_PARAMS``): ``{"f0": 440.0}`` puts a bell on a note.
     """
     bed_db = data.get("bed_db")
     if bed_db is not None and (isinstance(bed_db, bool) or not isinstance(bed_db, (int, float))):
@@ -88,6 +91,7 @@ def dict_to_spec(data: dict[str, Any]) -> Spec:
             gain_db=float(e.get("gain_db", -12.0)),
             pan=float(e.get("pan", 0.0)),
             seed=int(e.get("seed", 0)),
+            params=e.get("params"),
         )
         for e in data.get("events", [])
     ]

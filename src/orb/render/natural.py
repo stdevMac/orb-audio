@@ -121,7 +121,9 @@ PARAMS: dict[str, dict[str, float]] = {
     "car_horn": dict(width=0.2, reverb=0.18, reverb_decay=0.9),
     "siren": dict(width=0.3, reverb=0.22, reverb_decay=1.2),
     "engine": dict(width=0.3, reverb=0.08, reverb_decay=0.6),
-    "church_bell": dict(width=0.4, reverb=0.4, reverb_decay=2.0),
+    # ring / hardness / tierce / beat are the bell as cast; a Spec's params may move them
+    # (`orb.grammar.EVENT_PARAMS`). `f0` has no default: unset, the seed picks the bell.
+    "church_bell": dict(width=0.4, reverb=0.4, reverb_decay=2.0, ring=1.0, hardness=0.5, tierce=0.6, beat=0.0012),
     "fireworks": dict(width=0.7, reverb=0.25, reverb_decay=1.6),
 }
 
@@ -2559,20 +2561,38 @@ def _church_bell(ev, sr, rng, crng, p, seed):
     4-5x. The iron clapper's blow excites the upper partials strongly, and
     they die within a second or two while the hum rings on for tens of
     seconds. Every partial is a doublet (the bell is not perfectly round),
-    so they beat slowly, and the two ears hear different mixes of each pair."""
+    so they beat slowly, and the two ears hear different mixes of each pair.
+
+    `p` may carry a Spec's params (`orb.grammar.EVENT_PARAMS`): `f0` puts the
+    strike note on a pitch, `ring` scales the decay, `hardness` is the
+    clapper, `tierce` the bell's third and `beat` the width of the doublets.
+    Each one unset leaves the bell exactly as the seed casts it, and every
+    random draw is made either way, so a param changes only what it names."""
     n = _n(ev, sr)
     dur = n / sr
     fN = crng.uniform(520, 980)
-    ratios = np.array((0.25, 0.5, 0.6, 0.75, 1.0, 1.25, 1.335, 1.5, 2.0, 2.5, 2.67, 3.0, 3.36, 4.0, 4.5, 5.0))
+    if "f0" in p:
+        # The strike note is heard an octave under the nominal, where a tuned
+        # bell's prime sits (the nominal, superquint and octave nominal are
+        # the 2nd, 3rd and 4th harmonics of it).
+        fN = 2.0 * float(p["f0"])
+    tierce = float(p.get("tierce", 0.6))
+    ratios = np.array((0.25, 0.5, tierce, 0.75, 1.0, 1.25, 1.335, 1.5, 2.0, 2.5, 2.67, 3.0, 3.36, 4.0, 4.5, 5.0))
     ratios = ratios * crng.uniform(0.993, 1.007, len(ratios))
     ratios[0] *= crng.uniform(0.97, 1.03)  # old bells: hum and prime are rarely true
     ratios[1] *= crng.uniform(0.98, 1.02)
     ratios[4] = 1.0
     size = (700.0 / fN) ** 0.8
     t60 = np.array((24, 12, 9, 6, 6, 3, 3, 3.5, 2.6, 1.8, 1.6, 1.4, 1.1, 0.9, 0.7, 0.55)) * size
+    t60 = t60 * float(p.get("ring", 1.0))
     g = np.array((0.35, 0.5, 0.75, 0.25, 1.0, 0.2, 0.3, 0.55, 0.5, 0.4, 0.35, 0.3, 0.25, 0.2, 0.12, 0.08))
     g = g * crng.uniform(0.75, 1.25, len(g))
-    fa, fb, ta, tb = _bells_doublets(fN * ratios, t60, crng, 0.0012)
+    hard = float(p.get("hardness", 0.5))
+    if hard != 0.5:
+        # A harder clapper is in contact for less time, so more of the blow
+        # goes into the partials above the nominal; felt leaves them out.
+        g = g * np.where(ratios > 1.0, (0.15 + 1.7 * hard) ** np.log2(np.maximum(ratios, 1.0)), 1.0)
+    fa, fb, ta, tb = _bells_doublets(fN * ratios, t60, crng, float(p.get("beat", 0.0012)))
     # each ear hears its own blend of the two halves of every doublet
     u_l = crng.uniform(0.25, 0.75, len(g))
     u_r = np.clip(u_l + crng.uniform(-0.2, 0.2, len(g)), 0.1, 0.9)
@@ -2584,6 +2604,11 @@ def _church_bell(ev, sr, rng, crng, p, seed):
             m = g[i] * _bells_mode(f, d, sr, k)
             ir_l[:k] += ul * m
             ir_r[:k] += ur * m
+    if hard < 0.5:
+        # ...and a soft clapper lands slower: up to 12 ms for felt.
+        k = min(n, max(2, int(0.024 * (0.5 - hard) * sr)))
+        ir_l[:k] *= np.linspace(0.0, 1.0, k)
+        ir_r[:k] *= np.linspace(0.0, 1.0, k)
     strikes = [0.005] if seed % 2 == 0 else list(np.arange(0.005, max(0.01, dur - 0.5), 2.5))
     amps = crng.uniform(0.85, 1.0, len(strikes))
     # the clapper's clank: iron on bronze, a few ms
@@ -2597,7 +2622,7 @@ def _church_bell(ev, sr, rng, crng, p, seed):
         y = np.zeros(n)
         for st, a in zip(strikes, amps):
             _bells_place(y, int(st * sr), ir, a)
-        out.append((_norm(y) + 0.05 * _norm(clank)) * fo)
+        out.append((_norm(y) + 0.05 * (2.0 * hard) ** 2 * _norm(clank)) * fo)
     return out[0], out[1]
 
 

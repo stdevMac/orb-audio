@@ -42,6 +42,7 @@ from .grammar import (
     BED_CHOICES,
     BED_DB_RANGE,
     DEFAULT_BED_DB,
+    EVENT_PARAMS,
     EVENT_STYLE,
     MAX_EVENTS,
     MOODS,
@@ -49,7 +50,9 @@ from .grammar import (
     PAN_LABELS,
     Spec,
     SpecEvent,
+    event_param_errors,
 )
+from .render.events import ROLE_PARAMS as _ROLE_PARAMS
 from .render.foley import VARIANTS as _FOLEY_VARIANTS
 from .render.natural import VARIANTS as _NATURAL_VARIANTS
 from .score import AMBIENCE_TEXTURES, EVENT_ROLES, TEXTURES
@@ -69,7 +72,7 @@ MAX_GAIN_DB = 0.0
 MAX_VARIANTS = 32
 
 _SPEC_KEYS = {"duration", "texture", "mood", "events", "bed_db"}
-_EVENT_KEYS = {"role", "t", "dur", "gain_db", "pan", "seed"}
+_EVENT_KEYS = {"role", "t", "dur", "gain_db", "pan", "seed", "params"}
 
 
 class OrbToolError(ValueError):
@@ -107,6 +110,16 @@ EVENT_SCHEMA: dict[str, Any] = {
                 "Picks one take of this event. Same seed, same sound. For the natural and foley roles "
                 "it also picks the variant: thunder distance (seed % 4: 0 close crack .. 3 far rumble), "
                 "footsteps surface and pace, water drop drip or plop, door weight, explosion distance."
+            ),
+        },
+        "params": {
+            "type": "object",
+            "additionalProperties": {"type": "number"},
+            "description": (
+                "Renderer parameters for this one event, for the roles that take them (see "
+                "roles.<role>.params in orb_describe_grammar): for example {\"f0\": 440} puts a bell or a "
+                "church bell on A4, so a cue can follow the key of the music under it. Spec only: a "
+                "caption cannot express params."
             ),
         },
     },
@@ -349,6 +362,7 @@ def validate_spec(data: Any) -> dict[str, Any]:
         errors.append(f"events: {len(raw_events)} events, at most {MAX_EVENTS} allowed")
 
     events: list[dict[str, Any]] = []
+    has_params = False
     for i, ev in enumerate(raw_events):
         p = f"events[{i}]"
         if not isinstance(ev, dict):
@@ -397,9 +411,16 @@ def validate_spec(data: Any) -> dict[str, Any]:
         if not isinstance(seed, int) or isinstance(seed, bool) or not (0 <= seed <= 255):
             errors.append(f"{p}.seed: must be an integer in [0, 255]")
             continue
-        events.append(
-            {"role": role, "t": float(t), "dur": float(dur), "gain_db": float(gain), "pan": float(pan), "seed": seed}
-        )
+        params = ev.get("params")
+        param_errors = event_param_errors(role, params)
+        if param_errors:
+            errors.extend(f"{p}.{e}" for e in param_errors)
+            continue
+        event = {"role": role, "t": float(t), "dur": float(dur), "gain_db": float(gain), "pan": float(pan), "seed": seed}
+        if params:
+            event["params"] = {k: float(v) for k, v in params.items()}
+            has_params = True
+        events.append(event)
 
     if texture == NO_BED and not raw_events:
         errors.append('texture: "none" needs at least one event (the cue would be silent)')
@@ -411,6 +432,11 @@ def validate_spec(data: Any) -> dict[str, Any]:
         warnings.append(
             "bed_db is render-only: the caption cannot express it, so it will not round-trip "
             "through the planner"
+        )
+    if has_params:
+        warnings.append(
+            "event params are render-only: the caption cannot express them, so they will not "
+            "round-trip through the planner"
         )
     events.sort(key=lambda e: e["t"])
     spec = {"duration": float(duration), "texture": texture, "mood": mood, "events": events}
@@ -667,6 +693,18 @@ EXAMPLE_SPEC: dict[str, Any] = {
 }
 
 
+def _describe_params(role: str) -> dict[str, Any]:
+    """The params a role takes: range, what each does, and the default.
+
+    A default of None means the role has no single default for it: the seed
+    picks the value (a church bell's note), which is not the same as zero.
+    """
+    return {
+        name: {"range": [lo, hi], "default": _ROLE_PARAMS[role].get(name), "description": doc}
+        for name, (lo, hi, doc) in EVENT_PARAMS[role].items()
+    }
+
+
 def describe_grammar() -> dict[str, Any]:
     """Everything an agent needs to author a Spec without the planner."""
     return {
@@ -679,6 +717,7 @@ def describe_grammar() -> dict[str, Any]:
                 "default_gain_db": EVENT_STYLE[role][2],
                 "default_dur": EVENT_STYLE[role][3],
                 **({"seed_variants": FOLEY_VARIANTS[role]} if role in FOLEY_VARIANTS else {}),
+                **({"params": _describe_params(role)} if role in EVENT_PARAMS else {}),
             }
             for role in EVENT_ROLES
         },
@@ -708,6 +747,9 @@ def describe_grammar() -> dict[str, Any]:
             f"The texture bed runs for the whole cue, bed_db (default {DEFAULT_BED_DB:g}) below the events. Set "
             'texture to "none" for no bed (silence between events), or lower bed_db for a quieter one.',
             "Same Spec + same seed = bit-identical audio.",
+            "A few roles take per-event params (roles.<role>.params): set params.f0 to put a bell, church bell, "
+            "pop, click, impact or sub drop on a pitch, so a cue can follow the key of the music it sits over. "
+            "Params are Spec-only: a caption cannot express them.",
         ],
         "caption_grammar": (
             "{duration:.2f}-second {mood} cue, {texture} bed[, with {role} @{t:.2f} {dur:.2f}s "
