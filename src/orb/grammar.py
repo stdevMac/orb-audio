@@ -128,6 +128,53 @@ BED_DB_RANGE = (-60.0, -6.0)
 AMBIENCE_BED_DB = -14.0
 
 
+# Per-event renderer parameters a hand-written Spec may set in `params`.
+# Like `bed_db` they are render-only: the caption grammar and the planner
+# cannot express them, so a planner Spec never carries any. role -> name ->
+# (min, max, what it does). A role that is not listed takes no params.
+_PITCH = "pitch of the fundamental, Hz"
+_RING = "ring time (T60) of the fundamental, s"
+EVENT_PARAMS: dict[str, dict[str, tuple[float, float, str]]] = {
+    "bell": {"f0": (110.0, 2400.0, _PITCH), "t60": (0.05, 8.0, _RING)},
+    "ui_pop": {"f0": (200.0, 4000.0, _PITCH), "t60": (0.01, 1.0, _RING)},
+    "click": {"f0": (500.0, 8000.0, _PITCH), "t60": (0.005, 0.5, _RING)},
+    "impact": {"f0": (30.0, 400.0, _PITCH), "t60": (0.05, 3.0, _RING)},
+    "sub_drop": {
+        "f0": (40.0, 400.0, "pitch the drop starts on, Hz"),
+        "f_end": (20.0, 200.0, "pitch the drop lands on, Hz"),
+    },
+    "church_bell": {
+        "f0": (100.0, 1000.0, "strike note, Hz: half the bell's nominal. Unset, the seed picks the bell."),
+        "ring": (0.2, 4.0, "scales every partial's ring time (1 = as cast)"),
+        "hardness": (0.0, 1.0, "clapper hardness: 0 felt, 0.5 the shipped iron clapper, 1 a hard, bright blow"),
+        "tierce": (0.55, 0.67, "the third above the prime, as a ratio to the nominal: 0.6 minor (a church bell), 0.63 major"),
+        "beat": (0.0, 0.01, "how far apart each partial's doublet sits, as a fraction of its frequency (0.0012 as cast)"),
+    },
+}
+
+
+def event_param_errors(role: str, params: object) -> list[str]:
+    """Why `params` is not valid for `role`; empty when it is (or is None)."""
+    if params is None:
+        return []
+    if not isinstance(params, dict):
+        return ["params: must be an object of name -> number"]
+    allowed = EVENT_PARAMS.get(role, {})
+    errors = []
+    for name in sorted(params, key=str):
+        value = params[name]
+        if name not in allowed:
+            takes = f"takes {', '.join(sorted(allowed))}" if allowed else "takes no params"
+            errors.append(f"params.{name}: unknown for role {role!r} (it {takes})")
+            continue
+        lo, hi, _ = allowed[name]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not np.isfinite(value):
+            errors.append(f"params.{name}: must be a finite number")
+        elif not lo <= value <= hi:
+            errors.append(f"params.{name}: {value:g} is outside [{lo:g}, {hi:g}]")
+    return errors
+
+
 def default_bed_db(texture: str) -> float:
     return AMBIENCE_BED_DB if texture in AMBIENCE_TEXTURES else DEFAULT_BED_DB
 
@@ -172,12 +219,20 @@ class SpecEvent:
     gain_db: float
     pan: float
     seed: int
+    # Renderer parameters for this one event (see `EVENT_PARAMS`), e.g.
+    # {"f0": 440.0} to put a bell on a note. None = the role's defaults.
+    params: dict[str, float] | None = None
 
     def __post_init__(self) -> None:
         if self.role not in EVENT_ROLES:
             raise ValueError(f"unknown event role {self.role!r}")
         if self.seed < 0 or self.seed > 255:
             raise ValueError("event seed must be in [0, 255]")
+        errors = event_param_errors(self.role, self.params)
+        if errors:
+            raise ValueError("; ".join(errors))
+        if self.params is not None:
+            self.params = {str(k): float(v) for k, v in self.params.items()} or None
 
 
 @dataclass
@@ -187,7 +242,8 @@ class Spec:
     `texture` is one of `TEXTURES`, or `"none"` for no bed at all. `bed_db`
     is the bed level relative to the foreground (None = `DEFAULT_BED_DB`).
     The planner only ever produces a texture from `TEXTURES` with
-    `bed_db=None`; the other two options exist for hand-written Specs.
+    `bed_db=None` and events without `params`; those options exist for
+    hand-written Specs.
     """
 
     duration: float
@@ -419,6 +475,7 @@ def score_from_spec(spec: Spec, with_music: bool = False) -> Score:
                 dur,
                 character,
                 apex=apex,
+                params=dict(se.params or {}),
                 gain_db=se.gain_db,
                 pan=se.pan,
                 seed=se.seed,

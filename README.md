@@ -171,6 +171,7 @@ Why this matters for agents and motion design:
 | [`examples/03_variants.py`](examples/03_variants.py) | no | N non-repeating takes from one Spec |
 | [`examples/04_no_torch.py`](examples/04_no_torch.py) | no | the shippable DSP engine |
 | [`examples/05_agent_tool.py`](examples/05_agent_tool.py) | no | the agent tool layer, called directly |
+| [`examples/06_tuned_bell.py`](examples/06_tuned_bell.py) | no | per-event `params`: church bells on a D minor triad |
 
 A 12-second trailer cue:
 
@@ -210,6 +211,13 @@ The planner emits a small typed object, and the renderer is a pure function of i
   `"bed_db"` to move it, or `"texture": "none"` for no bed at all (clean UI sounds). In a
   caption, write `no bed` in place of the bed clause; such a caption is rendered exactly,
   without the planner.
+- a few roles take per-event **`params`** in a Spec dict, so a sound can sit on a note:
+  `{"role": "church_bell", "t": 1.0, "dur": 6.0, "params": {"f0": 293.66}}` puts the bell's
+  strike note on D4. `bell`, `ui_pop`, `click`, `impact` and `sub_drop` take `f0` as well;
+  the church bell also takes `ring` (how long it rings), `hardness` (the clapper), `tierce`
+  (its minor or major third) and `beat`. Left out, every sound is exactly what it was. Like
+  `bed_db`, params are Spec-only: a caption cannot express them. `orb_describe_grammar`
+  lists each role's params with their ranges and defaults.
 
 The caption grammar is documented in [`examples/README.md`](examples/README.md).
 

@@ -289,6 +289,44 @@ events = [{"role": ROLE_FOR[k["kind"]], "t": k["t"], "dur": k["dur"], "pan": k["
 
 If you move a keyframe and re-run, the sound moves with it.
 
+### A bell in the key of the music
+
+A cue that sits over music has to follow its key, and a role's pitch is otherwise fixed
+(the synth `bell` rings at 880 Hz) or left to the seed (each `church_bell` is cast
+somewhere between C4 and B4). An event's `params` puts it on a note:
+
+```python
+D4, F4, A4 = 293.66, 349.23, 440.00
+spec = {"duration": 10.0, "texture": "none", "mood": "calm", "events": [
+    {"role": "church_bell", "t": 0.5, "dur": 9.0, "seed": 0, "params": {"f0": D4}},
+    {"role": "church_bell", "t": 2.5, "dur": 7.0, "seed": 2, "params": {"f0": F4}},
+    {"role": "church_bell", "t": 4.5, "dur": 5.0, "seed": 4,
+     "params": {"f0": A4, "hardness": 0.9, "ring": 1.5}},
+]}
+run_tool("orb_render_spec", {"spec": spec, "name": "d_minor_bells"})
+```
+
+| Role | Params |
+|---|---|
+| `bell`, `ui_pop`, `click`, `impact` | `f0` (Hz), `t60` (ring time, s) |
+| `sub_drop` | `f0`, `f_end` (Hz: where the drop starts and lands) |
+| `church_bell` | `f0` (strike note, Hz), `ring` (x decay), `hardness` (0 felt .. 1 hard), `tierce` (0.6 minor, 0.63 major), `beat` (doublet width) |
+
+`orb_describe_grammar` returns the same table under `roles.<role>.params`, with each
+param's range and default. A default of `null` means there is none: unset, the seed picks
+the value (a church bell's note). `orb_validate_spec` rejects a param the role does not
+take, or one outside its range, with the event's path.
+
+- **`f0` on a church bell is its strike note**, the pitch a listener hears: half the bell's
+  nominal. The seed still casts the bell (how far its hum and prime are from true, the
+  weight of each partial), so two seeds on one note are two different bells on that note.
+- **A param left out changes nothing.** A Spec without params renders what it always
+  rendered, and a param set to its default is the same audio as leaving it out.
+- **Spec only.** Like `bed_db`, params have no place in the caption grammar, so the planner
+  never emits them and a caption will not carry them. Validation says so in a warning.
+
+[`examples/06_tuned_bell.py`](../examples/06_tuned_bell.py) tolls a D minor triad this way.
+
 ## Limits
 
 - Up to 8 events per Spec, 47 roles and 13 textures (`orb_describe_grammar` lists them, with each role's variants). A cue lasts 0.1–60 s when rendered

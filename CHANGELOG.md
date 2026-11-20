@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Per-event `params` in a hand-written Spec, so a pitched sound can follow the key of the music it sits over: `{"role": "church_bell", "t": 1.0, "dur": 6.0, "params": {"f0": 293.66}}` puts the bell's strike note on D4. `bell`, `ui_pop`, `click`, `impact` and `sub_drop` take `f0` (and `t60` or `f_end`); `church_bell` takes `f0`, `ring`, `hardness`, `tierce` and `beat`. `orb.grammar.EVENT_PARAMS` is the registry, `orb_describe_grammar` lists each role's params with ranges and defaults, and `orb_validate_spec` rejects unknown or out-of-range ones by path. Like `bed_db`, params are render-only: the caption grammar and the planner do not express them, and the tokenizer refuses a Spec that carries any. A Spec without params renders bit-identically to before, and a param at its default is the same audio as leaving it out. `examples/06_tuned_bell.py`, `tests/test_params.py`.
+
 ### Changed
 
 - Realism pass on the natural, foley and everyday sounds: 30 roles rebuilt from the physics of the real sound and checked against ESC-50 recordings and two audio judges (RESULTS.md). Thunder is a crack, then rumble arriving from the rest of the bolt and a long low tail, instead of a whoosh. Big gains for church bell, heartbeat, siren, owl, birds, applause, fireworks, gunshot and the desk sounds. Variant contract unchanged, no planner retrain. The site's pre-rendered library is re-rendered with the new sounds.
